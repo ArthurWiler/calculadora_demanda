@@ -1,0 +1,1612 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Calculo de Demanda - CEMIG 5.1</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
+    <link
+      href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css"
+      rel="stylesheet"
+    />
+    <link
+      href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800;900&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        padding: 0;
+      }
+      ::-webkit-scrollbar {
+        width: 6px;
+        height: 6px;
+      }
+      ::-webkit-scrollbar-track {
+        background: transparent;
+      }
+      ::-webkit-scrollbar-thumb {
+        background: #888;
+        border-radius: 3px;
+      }
+      input[type="number"]::-webkit-inner-spin-button,
+      input[type="number"]::-webkit-outer-spin-button {
+        -webkit-appearance: none;
+        margin: 0;
+      }
+      input[type="number"] {
+        -moz-appearance: textfield;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="text/babel">
+      const { useState, useMemo, useCallback } = React;
+
+      // ============================================================
+      // CONSTANTES NORMATIVAS - Tabelas CEMIG 5.1 Anexo B
+      // ============================================================
+
+      const TABELA_10 = [
+        { min: 0, max: 1, fator: 0.86 },
+        { min: 1, max: 2, fator: 0.81 },
+        { min: 2, max: 3, fator: 0.76 },
+        { min: 3, max: 4, fator: 0.72 },
+        { min: 4, max: 5, fator: 0.68 },
+        { min: 5, max: 6, fator: 0.64 },
+        { min: 6, max: 7, fator: 0.6 },
+        { min: 7, max: 8, fator: 0.57 },
+        { min: 8, max: 9, fator: 0.54 },
+        { min: 9, max: 10, fator: 0.52 },
+        { min: 10, max: Infinity, fator: 0.45 },
+      ];
+
+      const TABELA_11 = [
+        { d: "Oficina, industrias e semelhantes", fp: 1.0, lim: 20, fe: 0.8 },
+        { d: "Hoteis e semelhantes", fp: 0.5, lim: 20, fe: 0.4 },
+        {
+          d: "Auditorios, cinemas e semelhantes",
+          fp: 1.0,
+          lim: Infinity,
+          fe: 1.0,
+        },
+        { d: "Bancos e semelhantes", fp: 1.0, lim: Infinity, fe: 1.0 },
+        { d: "Barbearia, saloes de beleza", fp: 1.0, lim: Infinity, fe: 1.0 },
+        { d: "Clubes e semelhantes", fp: 1.0, lim: Infinity, fe: 1.0 },
+        { d: "Escolas e semelhantes", fp: 1.0, lim: 12, fe: 0.5 },
+        {
+          d: "Escritorios, lojas e salas comerciais",
+          fp: 1.0,
+          lim: 20,
+          fe: 0.7,
+        },
+        { d: "Garagens comerciais", fp: 1.0, lim: Infinity, fe: 1.0 },
+        { d: "Clinicas, hospitais e semelhantes", fp: 0.4, lim: 50, fe: 0.2 },
+        {
+          d: "Igrejas, templos e semelhantes",
+          fp: 1.0,
+          lim: Infinity,
+          fe: 1.0,
+        },
+        {
+          d: "Restaurantes, bares e semelhantes",
+          fp: 1.0,
+          lim: Infinity,
+          fe: 1.0,
+        },
+        { d: "Areas comuns e condominios", fp: 1.0, lim: 10, fe: 0.25 },
+        { d: "Salao de festas", fp: 1.0, lim: Infinity, fe: 1.0 },
+      ];
+
+      const TABELA_12 = [
+        { n: 1, a: 0.8, b: 1.0 },
+        { n: 2, a: 0.75, b: 1.0 },
+        { n: 3, a: 0.7, b: 0.8 },
+        { n: 4, a: 0.66, b: 0.65 },
+        { n: 5, a: 0.62, b: 0.55 },
+        { n: 6, a: 0.59, b: 0.5 },
+        { n: 7, a: 0.56, b: 0.45 },
+        { n: 8, a: 0.53, b: 0.43 },
+        { n: 9, a: 0.51, b: 0.4 },
+        { n: 10, a: 0.49, b: 0.36 },
+        { n: 11, a: 0.47, b: 0.35 },
+        { n: 12, a: 0.45, b: 0.34 },
+      ];
+
+      const F13 = [
+        0, 1, 0.92, 0.84, 0.76, 0.7, 0.65, 0.6, 0.57, 0.54, 0.52, 0.49, 0.48,
+        0.46, 0.45, 0.44, 0.43, 0.42, 0.41, 0.4, 0.4,
+      ];
+      function getFt13(n) {
+        if (n <= 0) return 0;
+        if (n <= 20) return F13[n];
+        if (n <= 25) return 0.38;
+        if (n <= 30) return 0.37;
+        if (n <= 40) return 0.36;
+        if (n <= 50) return 0.35;
+        if (n <= 60) return 0.34;
+        return 0.33;
+      }
+
+      const T14 = [
+        { cv: 0.25, l: "1/4", c1: 0.62, c2: 0.5, c3: 0.43, c4: 0.37 },
+        { cv: 0.33, l: "1/3", c1: 0.73, c2: 0.58, c3: 0.51, c4: 0.44 },
+        { cv: 0.5, l: "1/2", c1: 0.92, c2: 0.74, c3: 0.64, c4: 0.55 },
+        { cv: 0.75, l: "3/4", c1: 1.24, c2: 0.99, c3: 0.87, c4: 0.74 },
+        { cv: 1, l: "1,0", c1: 1.49, c2: 1.19, c3: 1.04, c4: 0.89 },
+        { cv: 1.5, l: "1,5", c1: 1.93, c2: 1.54, c3: 1.35, c4: 1.16 },
+        { cv: 2, l: "2,0", c1: 2.44, c2: 1.95, c3: 1.71, c4: 1.46 },
+        { cv: 3, l: "3,0", c1: 3.2, c2: 2.56, c3: 2.24, c4: 1.92 },
+        { cv: 4, l: "4,0", c1: 4.15, c2: 3.32, c3: 2.91, c4: 2.49 },
+        { cv: 5, l: "5,0", c1: 5.22, c2: 4.18, c3: 3.65, c4: 3.13 },
+        { cv: 7.5, l: "7,5", c1: 7.94, c2: 6.35, c3: 5.56, c4: 4.76 },
+        { cv: 10, l: "10", c1: 10.04, c2: 8.03, c3: 7.03, c4: 6.02 },
+        { cv: 12.5, l: "12,5", c1: 13.01, c2: 10.41, c3: 9.11, c4: 7.81 },
+      ];
+      const T15 = [
+        { cv: 0.167, l: "1/6", c1: 0.37, c2: 0.3, c3: 0.26, c4: 0.22 },
+        { cv: 0.25, l: "1/4", c1: 0.48, c2: 0.38, c3: 0.34, c4: 0.29 },
+        { cv: 0.33, l: "1/3", c1: 0.56, c2: 0.45, c3: 0.39, c4: 0.34 },
+        { cv: 0.5, l: "1/2", c1: 0.72, c2: 0.58, c3: 0.5, c4: 0.43 },
+        { cv: 0.75, l: "3/4", c1: 1.08, c2: 0.86, c3: 0.76, c4: 0.65 },
+        { cv: 1, l: "1,0", c1: 1.38, c2: 1.1, c3: 0.97, c4: 0.83 },
+        { cv: 1.5, l: "1,5", c1: 2.03, c2: 1.62, c3: 1.42, c4: 1.22 },
+        { cv: 2, l: "2,0", c1: 2.4, c2: 1.92, c3: 1.68, c4: 1.44 },
+        { cv: 3, l: "3,0", c1: 3.64, c2: 2.91, c3: 2.55, c4: 2.18 },
+        { cv: 4, l: "4,0", c1: 4.96, c2: 3.97, c3: 3.47, c4: 2.98 },
+        { cv: 5, l: "5,0", c1: 5.62, c2: 4.5, c3: 3.93, c4: 3.37 },
+        { cv: 6, l: "6,0", c1: 6.49, c2: 5.19, c3: 4.54, c4: 3.89 },
+        { cv: 7.5, l: "7,5", c1: 8.12, c2: 6.5, c3: 5.68, c4: 4.87 },
+        { cv: 10, l: "10", c1: 10.76, c2: 8.61, c3: 7.53, c4: 6.46 },
+        { cv: 12.5, l: "12,5", c1: 13.25, c2: 10.6, c3: 9.28, c4: 7.95 },
+        { cv: 15, l: "15", c1: 14.98, c2: 11.98, c3: 10.49, c4: 8.99 },
+        { cv: 20, l: "20", c1: 20.67, c2: 16.54, c3: 14.47, c4: 12.4 },
+        { cv: 25, l: "25", c1: 24.66, c2: 19.73, c3: 17.26, c4: 14.8 },
+        { cv: 30, l: "30", c1: 29.59, c2: 23.67, c3: 20.71, c4: 17.76 },
+        { cv: 50, l: "50", c1: 49.27, c2: null, c3: null, c4: null },
+        { cv: 60, l: "60", c1: 57.7, c2: null, c3: null, c4: null },
+        { cv: 75, l: "75", c1: 70.48, c2: null, c3: null, c4: null },
+      ];
+
+      // Disjuntores CEMIG 5.1
+      const DISJ = [
+        { fx: "Monopolar 63 A", d: 7.6, tipo: "mono" },
+        { fx: "Bipolar 63 A", d: 15.1, tipo: "bi" },
+        { fx: "Bipolar 100 A", d: 24.0, tipo: "bi" },
+        { fx: "Bipolar 125 A", d: 30.0, tipo: "bi" },
+        { fx: "Bipolar 150 A", d: 36.0, tipo: "bi" },
+        { fx: "Bipolar 200 A", d: 50.0, tipo: "bi" },
+        { fx: "Tripolar 63 A", d: 24.0, tipo: "tri" },
+        { fx: "Tripolar 80 A", d: 30.5, tipo: "tri" },
+        { fx: "Tripolar 100 A", d: 38.1, tipo: "tri" },
+        { fx: "Tripolar 125 A", d: 47.6, tipo: "tri" },
+        { fx: "Tripolar 150 A", d: 57.1, tipo: "tri" },
+        { fx: "Tripolar 200 A", d: 75.0, tipo: "tri" },
+        { fx: "Tripolar 225 A", d: 86.0, tipo: "tri" },
+        { fx: "Tripolar 250 A", d: 95.0, tipo: "tri" },
+        { fx: "Tripolar 300/315/320 A", d: 114.0, tipo: "tri" },
+        { fx: "Tripolar 400 A", d: 152.0, tipo: "tri" },
+        { fx: "Tripolar 450 A", d: 171.0, tipo: "tri" },
+        { fx: "Tripolar 500 A", d: 188.0, tipo: "tri" },
+        { fx: "Tripolar 600/630 A", d: 228.0, tipo: "tri" },
+        { fx: "Tripolar 700 A", d: 266.0, tipo: "tri" },
+        { fx: "Tripolar 800 A", d: 304.0, tipo: "tri" },
+      ];
+
+      function selecionarDisjuntores(demanda, redeMono) {
+        if (demanda <= 0) return [];
+        const tipos = ["mono", "bi", "tri"];
+        const result = [];
+        for (const tp of tipos) {
+          if (!redeMono && tp === "bi" && demanda > 16) continue;
+          const candidatos = DISJ.filter(
+            (dj) => dj.tipo === tp && dj.d >= demanda,
+          );
+          if (candidatos.length > 0) {
+            candidatos.sort((a, b) => a.d - b.d);
+            result.push(candidatos[0]);
+          }
+        }
+        return result;
+      }
+
+      // Catalogo pre-definido de aparelhos
+      const CAT = [
+        { n: "Chuveiro Eletrico 127V", w: 4400, g: "b1" },
+        { n: "Chuveiro Eletrico 220V", w: 6000, g: "b1" },
+        { n: "Chuveiro 4 estacoes", w: 6500, g: "b1" },
+        { n: "Chuveiro 9800W", w: 9800, g: "b1" },
+        { n: "Torneira eletrica", w: 2500, g: "b1" },
+        { n: "Cafeteira pequena", w: 600, g: "b1" },
+        { n: "Cafeteira comercial", w: 1200, g: "b1" },
+        { n: "Aquec. acumulacao ate 80L", w: 1500, g: "b2" },
+        { n: "Aquec. acumulacao 100-150L", w: 2500, g: "b2" },
+        { n: "Aquec. acumulacao 200-400L", w: 4000, g: "b2" },
+        { n: "Aquec. agua por tampa", w: 6000, g: "b2" },
+        { n: "Aquec. agua por passagem", w: 6000, g: "b2" },
+        { n: "Banheira hidromassagem", w: 6600, g: "b2" },
+        { n: "Fogao eletrico 4 bocas", w: 1500, g: "b3" },
+        { n: "Fogao eletrico 6b medio", w: 2100, g: "b3" },
+        { n: "Fogao eletrico 6b grande", w: 2700, g: "b3" },
+        { n: "Forno eletrico embutir", w: 4500, g: "b3" },
+        { n: "Forno microondas", w: 750, g: "b3" },
+        { n: "Micro forno eletrico", w: 1000, g: "b3" },
+        { n: "Grill", w: 1200, g: "b3" },
+        { n: "Assadeira grande", w: 1000, g: "b3" },
+        { n: "Assadeira pequena", w: 500, g: "b3" },
+        { n: "Maq. lavar roupas", w: 1500, g: "b4" },
+        { n: "Maq. lavar c/ aquecimento", w: 1000, g: "b4" },
+        { n: "Maq. lavar loucas", w: 1500, g: "b4" },
+        { n: "Maq. secar roupas", w: 3500, g: "b4" },
+        { n: "Ferro eletrico automatico", w: 1000, g: "b4" },
+        { n: "Ferro eletrico simples", w: 500, g: "b4" },
+        { n: "Geladeira comum", w: 250, g: "b5" },
+        { n: "Geladeira duplex", w: 300, g: "b5" },
+        { n: "Freezer vertical", w: 300, g: "b5" },
+        { n: "Freezer horiz. medio", w: 400, g: "b5" },
+        { n: "Freezer horiz. grande", w: 500, g: "b5" },
+        { n: "Liquidificador", w: 200, g: "b5" },
+        { n: "Espremedor de frutas", w: 200, g: "b5" },
+        { n: "Batedeira de bolo", w: 100, g: "b5" },
+        { n: "Exaustor", w: 150, g: "b5" },
+        { n: "Ebulidor", w: 1000, g: "b5" },
+        { n: "Conjunto de som", w: 100, g: "b5" },
+        { n: "Televisor", w: 300, g: "b5" },
+        { n: "Micro computador", w: 250, g: "b5" },
+        { n: "Impressora a laser", w: 900, g: "b5" },
+        { n: "Impressora comum", w: 90, g: "b5" },
+        { n: "Aspirador de po", w: 600, g: "b5" },
+        { n: "Enceradeira", w: 300, g: "b5" },
+        { n: "Aquecedor ambiente", w: 1000, g: "b5" },
+        { n: "Maq. costurar", w: 100, g: "b5" },
+        { n: "Panela eletrica", w: 1200, g: "b5" },
+        { n: "Sanduicheira", w: 640, g: "b5" },
+        { n: "Secador de cabelos", w: 1000, g: "b5" },
+        { n: "Sauna residencial", w: 4500, g: "b5" },
+        { n: "Sauna comercial", w: 12000, g: "b5" },
+        { n: "Fogao c/ acendedor", w: 90, g: "b5" },
+        { n: "Bebedouro eletrico", w: 210, g: "b5" },
+        { n: "Ventilador", w: 300, g: "b5" },
+        { n: "Ventilador de teto", w: 120, g: "b5" },
+        { n: "Torradeira", w: 800, g: "b5" },
+        { n: "Adega climatizada", w: 300, g: "b5" },
+        { n: "AC 7500 BTU", w: 1000, g: "c" },
+        { n: "AC 10000 BTU", w: 1350, g: "c" },
+        { n: "AC 12000 BTU", w: 1450, g: "c" },
+        { n: "AC 14000 BTU", w: 2000, g: "c" },
+        { n: "AC 18000 BTU", w: 2600, g: "c" },
+        { n: "AC 20000 BTU", w: 2800, g: "c" },
+        { n: "AC 30000 BTU", w: 3600, g: "c" },
+        { n: "Lampada LED 10W", w: 10, g: "il" },
+        { n: "Lampada LED 18W", w: 18, g: "il" },
+        { n: "Fluorescente 20W", w: 20, g: "il" },
+        { n: "Fluorescente 40W", w: 40, g: "il" },
+        { n: "Incandescente 60W", w: 60, g: "il" },
+        { n: "Incandescente 100W", w: 100, g: "il" },
+        { n: "Refletor odontologico", w: 150, g: "il" },
+        { n: "Raio X (dentista)", w: 1200, g: "f" },
+        { n: "Raio X (hospital)", w: 12100, g: "f" },
+        { n: "Raio X (25kW)", w: 25000, g: "f" },
+      ];
+
+      const GL = {
+        il: "Iluminacao e Tomadas",
+        b1: "b1 - Chuveiros/torneiras/cafeteiras",
+        b2: "b2 - Aquecedores de agua",
+        b3: "b3 - Fornos/fogoes/grill",
+        b4: "b4 - Lavadoras/secadoras/ferro",
+        b5: "b5 - Demais aparelhos",
+        c: "c - Condicionadores de ar",
+        f: "f - Raios-X",
+      };
+      const GO = ["il", "b1", "b2", "b3", "b4", "b5", "c", "f"];
+
+      // Funcoes de calculo
+      function calcA_res(kw) {
+        if (kw <= 0) return { d: 0, f: 0 };
+        const x =
+          TABELA_10.find((r) => kw > r.min && kw <= r.max) || TABELA_10[10];
+        return { d: kw * x.fator, f: x.fator };
+      }
+      function calcA_nr(kva, ci) {
+        if (kva <= 0 || ci < 0) return { d: 0, f: "-" };
+        const c = TABELA_11[ci];
+        if (!c) return { d: 0, f: "-" };
+        if (c.lim === Infinity) return { d: kva * c.fp, f: c.fp };
+        return {
+          d: Math.min(kva, c.lim) * c.fp + Math.max(0, kva - c.lim) * c.fe,
+          f: `${c.fp}/${c.fe}`,
+        };
+      }
+      function calcBsg(items, sg) {
+        const tot = items.reduce((s, i) => s + i.q, 0),
+          kw = items.reduce((s, i) => s + i.q * i.w, 0) / 1000;
+        if (!tot || kw <= 0) return { kw: 0, f: 0, d: 0 };
+        if (sg === "b3") {
+          const n = Math.min(tot, 12),
+            pm = kw / tot,
+            e = TABELA_12.find((x) => x.n === n) || TABELA_12[11],
+            f = pm <= 3.5 ? e.a : e.b;
+          return { kw, f, d: kw * f };
+        }
+        const f = getFt13(tot);
+        return { kw, f, d: kw * f };
+      }
+
+      const fmt = (v, d = 2) =>
+        v == null || isNaN(v)
+          ? "0,00"
+          : Number(v).toLocaleString("pt-BR", {
+              minimumFractionDigits: d,
+              maximumFractionDigits: d,
+            });
+      const uid = () => Math.random().toString(36).slice(2, 9);
+
+      // ============================================================
+      // APP
+      // ============================================================
+      function App() {
+        const [tab, setTab] = useState("cat");
+        const [dk, setDk] = useState(false);
+        const [cp, setCp] = useState(false);
+        const [qtds, setQtds] = useState(() => CAT.map(() => 0));
+        const [cflags, setCflags] = useState(() => CAT.map(() => false));
+        const [tipoA, setTipoA] = useState("res");
+        const [catA, setCatA] = useState(0);
+        const [mots, setMots] = useState([]);
+        const [sols, setSols] = useState([]);
+        const [redeMT, setRedeMT] = useState("tri"); // "mono" ou "tri"
+
+        const setQ = (i, v) =>
+          setQtds((p) => {
+            const n = [...p];
+            n[i] = Math.max(0, parseInt(v) || 0);
+            return n;
+          });
+        const togC = (i) =>
+          setCflags((p) => {
+            const n = [...p];
+            n[i] = !n[i];
+            return n;
+          });
+
+        const byG = useCallback(
+          (g) =>
+            CAT.map((c, i) => ({ ...c, q: qtds[i], i })).filter(
+              (x) => x.g === g && x.q > 0,
+            ),
+          [qtds],
+        );
+
+        const ilKW = useMemo(
+          () => byG("il").reduce((s, x) => s + x.q * x.w, 0) / 1000,
+          [byG],
+        );
+        const rA = useMemo(
+          () => (tipoA === "res" ? calcA_res(ilKW) : calcA_nr(ilKW, catA)),
+          [ilKW, tipoA, catA],
+        );
+
+        const rB = useMemo(() => {
+          const r = (g) =>
+            calcBsg(
+              byG(g).map((x) => ({ q: x.q, w: x.w })),
+              g,
+            );
+          const b1 = r("b1"),
+            b2 = r("b2"),
+            b3 = r("b3"),
+            b4 = r("b4"),
+            b5 = r("b5");
+          return {
+            b1,
+            b2,
+            b3,
+            b4,
+            b5,
+            total: b1.d + b2.d + b3.d + b4.d + b5.d,
+          };
+        }, [byG]);
+
+        const rC = useMemo(() => {
+          const items = CAT.map((c, i) => ({ ...c, q: qtds[i], i })).filter(
+            (x) => x.g === "c" && x.q > 0,
+          );
+          const norm = items.filter((x) => !cflags[x.i]),
+            cent = items.filter((x) => cflags[x.i]);
+          const tn = norm.reduce((s, x) => s + x.q, 0),
+            kn = norm.reduce((s, x) => s + x.q * x.w, 0) / 1000,
+            kc = cent.reduce((s, x) => s + x.q * x.w, 0) / 1000;
+          const fn = getFt13(tn);
+          return { d: kn * fn + kc, kw: kn + kc, fn };
+        }, [qtds, cflags]);
+
+        const rD = useMemo(() => {
+          const ms = mots.filter((m) => m.q > 0 && m.cv > 0),
+            tg = ms.reduce((s, m) => s + m.q, 0);
+          let d = 0;
+          const det = ms.map((m) => {
+            const tb = m.tp === "m" ? T14 : T15,
+              e = tb.find((x) => Math.abs(x.cv - m.cv) < 0.001);
+            if (!e) return { ...m, dkva: 0 };
+            let ck;
+            if (tg === 1) ck = "c1";
+            else if (tg === 2) ck = "c2";
+            else if (tg <= 5) ck = "c3";
+            else ck = "c4";
+            const v = e[ck] === null ? e.c1 : e[ck];
+            const dd = v * m.q;
+            d += dd;
+            return { ...m, dkva: dd };
+          });
+          return { d, tg, det };
+        }, [mots]);
+
+        const rE = useMemo(() => {
+          const ex = [];
+          sols.forEach((s) => {
+            for (let k = 0; k < (s.q || 0); k++) {
+              let p = (s.w || 0) / 1000;
+              if (s.vv) p *= 2;
+              ex.push({ desc: s.desc, p, vv: s.vv });
+            }
+          });
+          ex.sort((a, b) => b.p - a.p);
+          let d = 0;
+          const det = ex.map((x, i) => {
+            const f = i === 0 ? 1 : i === 1 ? 0.7 : i === 2 ? 0.4 : 0.3;
+            const dd = x.p * f;
+            d += dd;
+            return { ...x, f, d: dd };
+          });
+          return { d, det };
+        }, [sols]);
+
+        const rF = useMemo(() => {
+          const ex = [];
+          CAT.forEach((c, i) => {
+            if (c.g === "f" && qtds[i] > 0)
+              for (let k = 0; k < qtds[i]; k++)
+                ex.push({ n: c.n, p: c.w / 1000 });
+          });
+          ex.sort((a, b) => b.p - a.p);
+          let d = 0;
+          const det = ex.map((x, i) => {
+            const f = i === 0 ? 1 : 0.1;
+            const dd = x.p * f;
+            d += dd;
+            return { ...x, f, d: dd };
+          });
+          return { d, det };
+        }, [qtds]);
+
+        const D = useMemo(
+          () =>
+            (rA.d || 0) +
+            (rB.total || 0) +
+            (rC.d || 0) +
+            (rD.d || 0) +
+            (rE.d || 0) +
+            (rF.d || 0),
+          [rA, rB, rC, rD, rE, rF],
+        );
+
+        const disjOpcoes = useMemo(
+          () => selecionarDisjuntores(D, redeMT === "mono"),
+          [D, redeMT],
+        );
+
+        const clear = () => {
+          setQtds(CAT.map(() => 0));
+          setCflags(CAT.map(() => false));
+          setMots([]);
+          setSols([]);
+        };
+
+        const loadEx = () => {
+          clear();
+          setTipoA("nr");
+          setCatA(11);
+          const nq = CAT.map(() => 0);
+          const s = (nm, v) => {
+            const i = CAT.findIndex((x) =>
+              x.n.toLowerCase().includes(nm.toLowerCase()),
+            );
+            if (i >= 0) nq[i] = v;
+          };
+          s("incandescente 60", 10);
+          s("Chuveiro Eletrico 127", 1);
+          s("Torneira", 1);
+          s("Grill", 1);
+          s("Cafeteira pequena", 3);
+          s("AC 18000", 2);
+          s("Conjunto", 1);
+          s("Espremedor", 3);
+          s("Exaustor", 2);
+          s("Ebulidor", 1);
+          s("Freezer vertical", 4);
+          s("Geladeira comum", 1);
+          s("Liquidificador", 4);
+          s("lavar loucas", 2);
+          s("Torradeira", 2);
+          setQtds(nq);
+          setTab("res");
+        };
+
+        const copyR = useCallback(() => {
+          const djs = disjOpcoes.map(
+            (dj, i) =>
+              `${i === 0 ? "Ideal" : "Alternativa"}: ${dj.fx} (ate ${fmt(dj.d)} kVA)`,
+          );
+          const l = [
+            `=== Calculo de Demanda - CEMIG 5.1 ===`,
+            `Rede MT: ${redeMT === "mono" ? "Monofasica" : "Trifasica"}`,
+            `a: ${fmt(rA.d)} kVA`,
+            `b: ${fmt(rB.total)} kVA`,
+            `c: ${fmt(rC.d)} kVA`,
+            `d: ${fmt(rD.d)} kVA`,
+            `e: ${fmt(rE.d)} kVA`,
+            `f: ${fmt(rF.d)} kVA`,
+            `D = ${fmt(D)} kVA`,
+            ...(djs.length ? [`--- Disjuntor ---`, ...djs] : []),
+          ];
+          navigator.clipboard.writeText(l.join("\n")).then(() => {
+            setCp(true);
+            setTimeout(() => setCp(false), 2000);
+          });
+        }, [rA, rB, rC, rD, rE, rF, D, disjOpcoes, redeMT]);
+
+        const th = dk
+          ? {
+              bg: "#0c0d12",
+              cd: "#161821",
+              bd: "#252836",
+              tx: "#e4e6ed",
+              mt: "#7c8091",
+              ac: "#f59e0b",
+              abg: "#f59e0b15",
+              inp: "#111318",
+              hd: "#12131a",
+              rd: "#ef4444",
+            }
+          : {
+              bg: "#f0f1f5",
+              cd: "#fff",
+              bd: "#dfe1e8",
+              tx: "#1b1d26",
+              mt: "#6b7185",
+              ac: "#d97706",
+              abg: "#fef3c715",
+              inp: "#f7f8fa",
+              hd: "#1b1d26",
+              rd: "#dc2626",
+            };
+
+        const tbs = [
+          { k: "cat", l: "Cargas Instaladas" },
+          { k: "cfg", l: "Config. Demanda" },
+          { k: "mot", l: "Motores (d)" },
+          { k: "sol", l: "Soldas (e)" },
+          { k: "res", l: "Resultado" },
+        ];
+
+        const Cd = ({ children, title, sub, cl = "" }) => (
+          <div
+            style={{
+              background: th.cd,
+              border: `1px solid ${th.bd}`,
+              borderRadius: 10,
+            }}
+            className={`p-4 mb-4 ${cl}`}
+          >
+            {title && (
+              <h3 style={{ color: th.tx }} className="text-sm font-bold mb-0.5">
+                {title}
+              </h3>
+            )}
+            {sub && (
+              <p style={{ color: th.mt }} className="text-xs mb-3">
+                {sub}
+              </p>
+            )}
+            {children}
+          </div>
+        );
+
+        const Bt = ({ children, onClick, v = "d", sm, cl = "" }) => {
+          const st =
+            v === "a"
+              ? { background: th.ac, color: "#fff", border: "none" }
+              : v === "r"
+                ? {
+                    background: "transparent",
+                    color: th.rd,
+                    border: `1px solid ${th.rd}30`,
+                  }
+                : {
+                    background: th.inp,
+                    color: th.tx,
+                    border: `1px solid ${th.bd}`,
+                  };
+          return (
+            <button
+              onClick={onClick}
+              className={`inline-flex items-center justify-center gap-1.5 font-medium rounded-lg transition-all cursor-pointer select-none ${sm ? "text-xs px-2.5 py-1.5" : "text-sm px-3.5 py-2"} ${cl}`}
+              style={st}
+            >
+              {children}
+            </button>
+          );
+        };
+
+        const Inp = ({
+          value,
+          onChange,
+          type = "text",
+          placeholder,
+          style: s = {},
+          cl = "",
+        }) => (
+          <input
+            type={type}
+            value={value}
+            onChange={onChange}
+            placeholder={placeholder}
+            className={`rounded-md text-sm outline-none ${cl}`}
+            style={{
+              background: th.inp,
+              color: th.tx,
+              border: `1px solid ${th.bd}`,
+              padding: "5px 8px",
+              ...s,
+            }}
+          />
+        );
+
+        const Sel = ({ value, onChange, children, cl = "" }) => (
+          <select
+            value={value}
+            onChange={onChange}
+            className={`rounded-md text-sm outline-none cursor-pointer ${cl}`}
+            style={{
+              background: th.inp,
+              color: th.tx,
+              border: `1px solid ${th.bd}`,
+              padding: "5px 8px",
+            }}
+          >
+            {children}
+          </select>
+        );
+
+        const Bg = ({ children, color = th.ac }) => (
+          <span
+            className="text-xs font-bold px-1.5 py-0.5 rounded-full"
+            style={{ background: `${color}20`, color }}
+          >
+            {children}
+          </span>
+        );
+
+        // ==== RENDER TABS ====
+        const renderCat = () => (
+          <div>
+            <Cd
+              title="Relacao de Cargas Instaladas"
+              sub="Preencha a quantidade. A potencia segue o catalogo CEMIG."
+            >
+              <div className="flex gap-2 mb-3 flex-wrap">
+                <Bt v="a" onClick={loadEx} sm>
+                  Carregar exemplo
+                </Bt>
+                <Bt v="r" onClick={clear} sm>
+                  Limpar tudo
+                </Bt>
+              </div>
+            </Cd>
+            {GO.map((sg) => {
+              const items = CAT.map((c, i) => ({ ...c, ci: i })).filter(
+                (x) => x.g === sg,
+              );
+              if (!items.length) return null;
+              const any = items.some((x) => (qtds[x.ci] || 0) > 0);
+              return (
+                <Cd key={sg} title={GL[sg]}>
+                  <div className="overflow-x-auto">
+                    <table
+                      className="w-full text-xs"
+                      style={{ borderCollapse: "separate", borderSpacing: 0 }}
+                    >
+                      <thead>
+                        <tr>
+                          <th
+                            className="text-left py-1.5 px-2 font-semibold"
+                            style={{
+                              color: th.mt,
+                              borderBottom: `1px solid ${th.bd}`,
+                              width: "44%",
+                            }}
+                          >
+                            Equipamento
+                          </th>
+                          <th
+                            className="text-right py-1.5 px-2 font-semibold"
+                            style={{
+                              color: th.mt,
+                              borderBottom: `1px solid ${th.bd}`,
+                              width: "18%",
+                            }}
+                          >
+                            Pot. (W)
+                          </th>
+                          <th
+                            className="text-center py-1.5 px-2 font-semibold"
+                            style={{
+                              color: th.mt,
+                              borderBottom: `1px solid ${th.bd}`,
+                              width: "14%",
+                            }}
+                          >
+                            Qtd
+                          </th>
+                          <th
+                            className="text-right py-1.5 px-2 font-semibold"
+                            style={{
+                              color: th.mt,
+                              borderBottom: `1px solid ${th.bd}`,
+                              width: "18%",
+                            }}
+                          >
+                            Total (W)
+                          </th>
+                          {sg === "c" && (
+                            <th
+                              className="text-center py-1.5 px-2 font-semibold"
+                              style={{
+                                color: th.mt,
+                                borderBottom: `1px solid ${th.bd}`,
+                                width: "8%",
+                              }}
+                            >
+                              Central
+                            </th>
+                          )}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {items.map((it) => {
+                          const q = qtds[it.ci] || 0,
+                            tot = q * it.w;
+                          return (
+                            <tr
+                              key={it.ci}
+                              style={{
+                                background: q > 0 ? th.abg : "transparent",
+                              }}
+                            >
+                              <td
+                                className="py-1 px-2"
+                                style={{
+                                  color: th.tx,
+                                  borderBottom: `1px solid ${th.bd}15`,
+                                }}
+                              >
+                                {it.n}
+                              </td>
+                              <td
+                                className="py-1 px-2 text-right font-mono"
+                                style={{
+                                  color: th.mt,
+                                  borderBottom: `1px solid ${th.bd}15`,
+                                }}
+                              >
+                                {it.w.toLocaleString("pt-BR")}
+                              </td>
+                              <td
+                                className="py-1 px-2 text-center"
+                                style={{ borderBottom: `1px solid ${th.bd}15` }}
+                              >
+                                <input
+                                  type="number"
+                                  min="0"
+                                  value={q || ""}
+                                  onChange={(e) => setQ(it.ci, e.target.value)}
+                                  placeholder="0"
+                                  className="rounded text-center text-xs outline-none w-14"
+                                  style={{
+                                    background: th.inp,
+                                    color: th.tx,
+                                    border: `1px solid ${th.bd}`,
+                                    padding: "3px 4px",
+                                  }}
+                                />
+                              </td>
+                              <td
+                                className="py-1 px-2 text-right font-mono font-semibold"
+                                style={{
+                                  color: q > 0 ? th.ac : th.mt,
+                                  borderBottom: `1px solid ${th.bd}15`,
+                                }}
+                              >
+                                {q > 0 ? tot.toLocaleString("pt-BR") : "-"}
+                              </td>
+                              {sg === "c" && (
+                                <td
+                                  className="py-1 px-2 text-center"
+                                  style={{
+                                    borderBottom: `1px solid ${th.bd}15`,
+                                  }}
+                                >
+                                  <input
+                                    type="checkbox"
+                                    checked={!!cflags[it.ci]}
+                                    onChange={() => togC(it.ci)}
+                                  />
+                                </td>
+                              )}
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                  {any && (
+                    <div
+                      className="mt-2 text-right text-xs font-semibold"
+                      style={{ color: th.ac }}
+                    >
+                      Subtotal:{" "}
+                      {(
+                        items.reduce((s, x) => s + (qtds[x.ci] || 0) * x.w, 0) /
+                        1000
+                      ).toLocaleString("pt-BR", {
+                        minimumFractionDigits: 2,
+                      })}{" "}
+                      kW
+                    </div>
+                  )}
+                </Cd>
+              );
+            })}
+          </div>
+        );
+
+        const renderCfg = () => (
+          <div>
+            <Cd
+              title="Grupo A - Iluminacao e Tomadas"
+              sub="Tipo de unidade consumidora define o fator de demanda."
+            >
+              <div className="flex gap-4 mb-3 flex-wrap">
+                <label
+                  className="flex items-center gap-2 cursor-pointer text-sm"
+                  style={{ color: th.tx }}
+                >
+                  <input
+                    type="radio"
+                    checked={tipoA === "res"}
+                    onChange={() => setTipoA("res")}
+                  />{" "}
+                  Residencial (Tab. 10)
+                </label>
+                <label
+                  className="flex items-center gap-2 cursor-pointer text-sm"
+                  style={{ color: th.tx }}
+                >
+                  <input
+                    type="radio"
+                    checked={tipoA === "nr"}
+                    onChange={() => setTipoA("nr")}
+                  />{" "}
+                  Nao Residencial (Tab. 11)
+                </label>
+              </div>
+              {tipoA === "nr" && (
+                <div className="mb-3">
+                  <Sel value={catA} onChange={(e) => setCatA(+e.target.value)}>
+                    {TABELA_11.map((c, i) => (
+                      <option key={i} value={i}>
+                        {c.d}
+                      </option>
+                    ))}
+                  </Sel>
+                </div>
+              )}
+              <div
+                className="rounded-lg p-3"
+                style={{ background: th.abg, border: `1px solid ${th.ac}30` }}
+              >
+                <div className="text-xs" style={{ color: th.mt }}>
+                  Carga iluminacao:{" "}
+                  <b style={{ color: th.tx }}>{fmt(ilKW)} kW</b>
+                </div>
+                <div className="text-xs mt-1" style={{ color: th.mt }}>
+                  Fator:{" "}
+                  <b style={{ color: th.tx }}>
+                    {typeof rA.f === "number" ? fmt(rA.f) : rA.f}
+                  </b>
+                </div>
+                <div
+                  className="text-sm font-bold mt-1"
+                  style={{ color: th.ac }}
+                >
+                  Demanda "a": {fmt(rA.d)} kVA
+                </div>
+              </div>
+            </Cd>
+            <Cd
+              title="Rede de Media Tensao"
+              sub="Define quais disjuntores sao aplicaveis na selecao automatica."
+            >
+              <div className="flex gap-4 flex-wrap">
+                <label
+                  className="flex items-center gap-2 cursor-pointer text-sm"
+                  style={{ color: th.tx }}
+                >
+                  <input
+                    type="radio"
+                    checked={redeMT === "tri"}
+                    onChange={() => setRedeMT("tri")}
+                  />{" "}
+                  Trifasica (127/220V)
+                </label>
+                <label
+                  className="flex items-center gap-2 cursor-pointer text-sm"
+                  style={{ color: th.tx }}
+                >
+                  <input
+                    type="radio"
+                    checked={redeMT === "mono"}
+                    onChange={() => setRedeMT("mono")}
+                  />{" "}
+                  Monofasica (120/240V)
+                </label>
+              </div>
+              {redeMT === "tri" && (
+                <p className="text-xs mt-2" style={{ color: th.ac }}>
+                  Rede trifasica: disjuntores bipolares limitados a demandas ate
+                  16 kVA.
+                </p>
+              )}
+            </Cd>
+            <Cd title="Resumo Fatores de Demanda">
+              {["b1", "b2", "b3", "b4", "b5"].map((sg) => {
+                const r = rB[sg];
+                if (r.kw <= 0) return null;
+                return (
+                  <div
+                    key={sg}
+                    className="flex flex-wrap justify-between items-center py-1.5 px-2 rounded mb-1"
+                    style={{ background: th.abg }}
+                  >
+                    <span className="text-xs" style={{ color: th.tx }}>
+                      {GL[sg]}
+                    </span>
+                    <div
+                      className="text-xs flex gap-3"
+                      style={{ color: th.mt }}
+                    >
+                      <span>CI:{fmt(r.kw)}kW</span>
+                      <span>FD:{fmt(r.f)}</span>
+                      <span className="font-bold" style={{ color: th.ac }}>
+                        {fmt(r.d)}kVA
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
+              {rB.total > 0 && (
+                <div
+                  className="flex justify-between items-center p-2 rounded-lg mt-2"
+                  style={{ background: th.ac, color: "#fff" }}
+                >
+                  <b className="text-xs">Total "b"</b>
+                  <b>{fmt(rB.total)} kVA</b>
+                </div>
+              )}
+              {rC.d > 0 && (
+                <div
+                  className="flex justify-between items-center p-2 rounded-lg mt-2"
+                  style={{ background: th.abg, border: `1px solid ${th.ac}30` }}
+                >
+                  <b className="text-xs" style={{ color: th.tx }}>
+                    Demanda "c"
+                  </b>
+                  <b style={{ color: th.ac }}>{fmt(rC.d)} kVA</b>
+                </div>
+              )}
+              {rF.d > 0 && (
+                <div
+                  className="flex justify-between items-center p-2 rounded-lg mt-2"
+                  style={{ background: th.abg, border: `1px solid ${th.ac}30` }}
+                >
+                  <b className="text-xs" style={{ color: th.tx }}>
+                    Demanda "f"
+                  </b>
+                  <b style={{ color: th.ac }}>{fmt(rF.d)} kVA</b>
+                </div>
+              )}
+            </Cd>
+          </div>
+        );
+
+        const renderMot = () => (
+          <Cd
+            title='Demanda "d" - Motores Eletricos'
+            sub="Tabelas 14/15. Coluna depende do total geral."
+          >
+            <table className="w-full text-xs mb-2">
+              <thead>
+                <tr>
+                  {["Tipo", "CV", "Qtd", ""].map((h, i) => (
+                    <th
+                      key={i}
+                      className="text-left py-1.5 px-2 font-semibold"
+                      style={{
+                        color: th.mt,
+                        borderBottom: `1px solid ${th.bd}`,
+                      }}
+                    >
+                      {h}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {mots.map((m, i) => (
+                  <tr key={m.id}>
+                    <td
+                      className="py-1 px-2"
+                      style={{ borderBottom: `1px solid ${th.bd}20` }}
+                    >
+                      <Sel
+                        value={m.tp}
+                        onChange={(e) =>
+                          setMots((p) =>
+                            p.map((x, j) =>
+                              j === i ? { ...x, tp: e.target.value } : x,
+                            ),
+                          )
+                        }
+                      >
+                        <option value="m">Mono</option>
+                        <option value="t">Tri</option>
+                      </Sel>
+                    </td>
+                    <td
+                      className="py-1 px-2"
+                      style={{ borderBottom: `1px solid ${th.bd}20` }}
+                    >
+                      <Sel
+                        value={m.cv}
+                        onChange={(e) =>
+                          setMots((p) =>
+                            p.map((x, j) =>
+                              j === i
+                                ? { ...x, cv: parseFloat(e.target.value) }
+                                : x,
+                            ),
+                          )
+                        }
+                      >
+                        <option value="">-</option>
+                        {(m.tp === "m" ? T14 : T15).map((e) => (
+                          <option key={e.cv} value={e.cv}>
+                            {e.l} CV
+                          </option>
+                        ))}
+                      </Sel>
+                    </td>
+                    <td
+                      className="py-1 px-2"
+                      style={{ borderBottom: `1px solid ${th.bd}20` }}
+                    >
+                      <Inp
+                        type="number"
+                        value={m.q || ""}
+                        onChange={(e) =>
+                          setMots((p) =>
+                            p.map((x, j) =>
+                              j === i
+                                ? { ...x, q: parseInt(e.target.value) || 0 }
+                                : x,
+                            ),
+                          )
+                        }
+                        style={{ width: 55 }}
+                      />
+                    </td>
+                    <td
+                      className="py-1 px-1"
+                      style={{ borderBottom: `1px solid ${th.bd}20` }}
+                    >
+                      <button
+                        onClick={() =>
+                          setMots((p) => p.filter((_, j) => j !== i))
+                        }
+                        style={{ color: th.rd }}
+                      >
+                        X
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <Bt
+              sm
+              onClick={() =>
+                setMots((p) => [...p, { id: uid(), tp: "m", cv: 1, q: 1 }])
+              }
+            >
+              + Motor
+            </Bt>
+            {rD.d > 0 && (
+              <div className="mt-3">
+                <div className="text-xs mb-1" style={{ color: th.mt }}>
+                  Total motores: {rD.tg} | Coluna:{" "}
+                  {rD.tg === 1
+                    ? "I"
+                    : rD.tg === 2
+                      ? "II"
+                      : rD.tg <= 5
+                        ? "III"
+                        : "IV"}
+                </div>
+                {rD.det.map((d, i) => (
+                  <div key={i} className="text-xs" style={{ color: th.tx }}>
+                    {d.tp === "m" ? "Mono" : "Tri"} {d.cv}CV x{d.q} ={" "}
+                    <b style={{ color: th.ac }}>{fmt(d.dkva)} kVA</b>
+                  </div>
+                ))}
+                <div
+                  className="flex justify-between items-center p-2 rounded-lg mt-2"
+                  style={{ background: th.abg, border: `1px solid ${th.ac}30` }}
+                >
+                  <b className="text-xs" style={{ color: th.tx }}>
+                    Demanda "d"
+                  </b>
+                  <b style={{ color: th.ac }}>{fmt(rD.d)} kVA</b>
+                </div>
+              </div>
+            )}
+          </Cd>
+        );
+
+        const renderSol = () => (
+          <Cd
+            title='Demanda "e" - Soldas/Transformadores'
+            sub="100% maior, 70% 2o, 40% 3o, 30% demais. V-v dobra."
+          >
+            <table className="w-full text-xs mb-2">
+              <thead>
+                <tr>
+                  {["Descricao", "Pot (W)", "Qtd", "V-v", ""].map((h, i) => (
+                    <th
+                      key={i}
+                      className="text-left py-1.5 px-2 font-semibold"
+                      style={{
+                        color: th.mt,
+                        borderBottom: `1px solid ${th.bd}`,
+                      }}
+                    >
+                      {h}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {sols.map((s, i) => (
+                  <tr key={s.id}>
+                    <td
+                      className="py-1 px-2"
+                      style={{ borderBottom: `1px solid ${th.bd}20` }}
+                    >
+                      <Inp
+                        value={s.desc}
+                        onChange={(e) =>
+                          setSols((p) =>
+                            p.map((x, j) =>
+                              j === i ? { ...x, desc: e.target.value } : x,
+                            ),
+                          )
+                        }
+                        placeholder="Tipo"
+                        style={{ width: "100%" }}
+                      />
+                    </td>
+                    <td
+                      className="py-1 px-2"
+                      style={{ borderBottom: `1px solid ${th.bd}20` }}
+                    >
+                      <Inp
+                        type="number"
+                        value={s.w || ""}
+                        onChange={(e) =>
+                          setSols((p) =>
+                            p.map((x, j) =>
+                              j === i
+                                ? { ...x, w: parseInt(e.target.value) || 0 }
+                                : x,
+                            ),
+                          )
+                        }
+                        style={{ width: 70 }}
+                      />
+                    </td>
+                    <td
+                      className="py-1 px-2"
+                      style={{ borderBottom: `1px solid ${th.bd}20` }}
+                    >
+                      <Inp
+                        type="number"
+                        value={s.q || ""}
+                        onChange={(e) =>
+                          setSols((p) =>
+                            p.map((x, j) =>
+                              j === i
+                                ? { ...x, q: parseInt(e.target.value) || 0 }
+                                : x,
+                            ),
+                          )
+                        }
+                        style={{ width: 45 }}
+                      />
+                    </td>
+                    <td
+                      className="py-1 px-2"
+                      style={{ borderBottom: `1px solid ${th.bd}20` }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={!!s.vv}
+                        onChange={() =>
+                          setSols((p) =>
+                            p.map((x, j) =>
+                              j === i ? { ...x, vv: !x.vv } : x,
+                            ),
+                          )
+                        }
+                      />
+                    </td>
+                    <td
+                      className="py-1 px-1"
+                      style={{ borderBottom: `1px solid ${th.bd}20` }}
+                    >
+                      <button
+                        onClick={() =>
+                          setSols((p) => p.filter((_, j) => j !== i))
+                        }
+                        style={{ color: th.rd }}
+                      >
+                        X
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <Bt
+              sm
+              onClick={() =>
+                setSols((p) => [
+                  ...p,
+                  { id: uid(), desc: "", w: 0, q: 1, vv: false },
+                ])
+              }
+            >
+              + Equipamento
+            </Bt>
+            {rE.det.length > 0 && (
+              <div className="mt-3">
+                {rE.det.map((d, i) => (
+                  <div key={i} className="text-xs" style={{ color: th.tx }}>
+                    #{i + 1} {d.desc || "-"} {d.vv ? "(V-v x2) " : ""}
+                    {fmt(d.p)}kVA x{(d.f * 100).toFixed(0)}% ={" "}
+                    <b style={{ color: th.ac }}>{fmt(d.d)}kVA</b>
+                  </div>
+                ))}
+                <div
+                  className="flex justify-between items-center p-2 rounded-lg mt-2"
+                  style={{ background: th.abg, border: `1px solid ${th.ac}30` }}
+                >
+                  <b className="text-xs" style={{ color: th.tx }}>
+                    Demanda "e"
+                  </b>
+                  <b style={{ color: th.ac }}>{fmt(rE.d)} kVA</b>
+                </div>
+              </div>
+            )}
+          </Cd>
+        );
+
+        const renderRes = () => {
+          const gs = [
+            { k: "a", l: "Iluminacao e tomadas", v: rA.d },
+            { k: "b", l: "Aparelhos e aquecimento", v: rB.total },
+            { k: "c", l: "Condicionadores de ar", v: rC.d },
+            { k: "d", l: "Motores eletricos", v: rD.d },
+            { k: "e", l: "Soldas/transformadores", v: rE.d },
+            { k: "f", l: "Raios-X", v: rF.d },
+          ];
+          return (
+            <div>
+              <Cd>
+                <div className="text-center mb-5">
+                  <p
+                    className="text-xs uppercase tracking-widest mb-1"
+                    style={{ color: th.mt }}
+                  >
+                    Demanda total da edificacao
+                  </p>
+                  <div
+                    className="font-mono"
+                    style={{
+                      fontSize: 42,
+                      fontWeight: 900,
+                      color: th.ac,
+                      lineHeight: 1.1,
+                    }}
+                  >
+                    {fmt(D)}
+                    <span
+                      className="text-lg font-semibold ml-2"
+                      style={{ color: th.mt }}
+                    >
+                      kVA
+                    </span>
+                  </div>
+                </div>
+                <div
+                  className="rounded-xl overflow-hidden"
+                  style={{ border: `1px solid ${th.bd}` }}
+                >
+                  {gs.map((g, i) => (
+                    <div
+                      key={g.k}
+                      className="flex items-center justify-between px-3 py-2.5"
+                      style={{
+                        borderBottom: i < 5 ? `1px solid ${th.bd}` : "none",
+                        background: i % 2 === 0 ? th.inp : "transparent",
+                      }}
+                    >
+                      <div className="flex items-center gap-2">
+                        <Bg>{g.k}</Bg>
+                        <span className="text-xs" style={{ color: th.tx }}>
+                          {g.l}
+                        </span>
+                      </div>
+                      <span
+                        className="font-mono font-bold text-xs"
+                        style={{ color: g.v > 0 ? th.ac : th.mt }}
+                      >
+                        {fmt(g.v)} kVA
+                      </span>
+                    </div>
+                  ))}
+                  <div
+                    className="flex items-center justify-between px-3 py-3"
+                    style={{ background: th.ac }}
+                  >
+                    <b className="text-xs text-white">
+                      D = a + b + c + d + e + f
+                    </b>
+                    <span className="font-mono font-black text-base text-white">
+                      {fmt(D)} kVA
+                    </span>
+                  </div>
+                </div>
+                <div className="flex gap-2 justify-center mt-4 flex-wrap">
+                  <Bt v="a" onClick={copyR}>
+                    {cp ? "Copiado!" : "Copiar resultado"}
+                  </Bt>
+                  <Bt onClick={clear}>Limpar tudo</Bt>
+                </div>
+              </Cd>
+              {D > 0 && (
+                <Cd
+                  title="Disjuntor Recomendado"
+                  sub={`Rede de MT: ${redeMT === "mono" ? "Monofasica (120/240V)" : "Trifasica (127/220V)"} | Demanda: ${fmt(D)} kVA`}
+                >
+                  {disjOpcoes.length > 0 ? (
+                    <div>
+                      {disjOpcoes.map((dj, i) => (
+                        <div
+                          key={i}
+                          className="flex items-center justify-between px-3 py-2.5 rounded-lg mb-2"
+                          style={{
+                            background: i === 0 ? th.ac + "18" : th.abg,
+                            border: `1px solid ${i === 0 ? th.ac : th.bd}${i === 0 ? "40" : "30"}`,
+                          }}
+                        >
+                          <div className="flex items-center gap-2">
+                            {i === 0 && (
+                              <span
+                                className="text-xs font-bold px-1.5 py-0.5 rounded"
+                                style={{ background: th.ac, color: "#fff" }}
+                              >
+                                IDEAL
+                              </span>
+                            )}
+                            {i > 0 && (
+                              <span
+                                className="text-xs px-1.5 py-0.5 rounded"
+                                style={{ background: th.bd, color: th.mt }}
+                              >
+                                Alternativa
+                              </span>
+                            )}
+                            <span
+                              className="text-sm font-bold"
+                              style={{ color: th.tx }}
+                            >
+                              {dj.fx}
+                            </span>
+                          </div>
+                          <span
+                            className="text-xs font-mono"
+                            style={{ color: th.mt }}
+                          >
+                            ate {fmt(dj.d)} kVA
+                          </span>
+                        </div>
+                      ))}
+                      {redeMT === "tri" && D > 16 && (
+                        <p className="text-xs mt-1" style={{ color: th.ac }}>
+                          Rede trifasica com demanda acima de 16 kVA:
+                          disjuntores bipolares desconsiderados.
+                        </p>
+                      )}
+                    </div>
+                  ) : (
+                    <p className="text-xs" style={{ color: th.rd }}>
+                      Nenhum disjuntor padrao atende a demanda calculada de{" "}
+                      {fmt(D)} kVA. Consultar engenheiro responsavel.
+                    </p>
+                  )}
+                </Cd>
+              )}
+              <Cd title="Observacoes normativas">
+                <div className="text-xs space-y-1" style={{ color: th.mt }}>
+                  <p>
+                    Grupo "a" residencial: Tabela 10. Nao residencial: Tabela
+                    11.
+                  </p>
+                  <p>
+                    Subgrupos b1/b2/b4/b5: Tabela 13. b3 (fornos/fogoes): Tabela
+                    12.
+                  </p>
+                  <p>
+                    AC central: fator 100%. Motores: coluna varia pelo total
+                    geral.
+                  </p>
+                  <p>
+                    Grupo "e": V-v invertida dobra potencia. kW = kVA (fp
+                    unitario) p/ aquecimento.
+                  </p>
+                  <p style={{ color: th.ac }}>
+                    Ferramenta de apoio. Validar com profissional habilitado.
+                  </p>
+                </div>
+              </Cd>
+            </div>
+          );
+        };
+
+        return (
+          <div
+            style={{
+              background: th.bg,
+              color: th.tx,
+              minHeight: "100vh",
+              fontFamily: "'DM Sans',system-ui,sans-serif",
+            }}
+          >
+            <link
+              href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800;900&display=swap"
+              rel="stylesheet"
+            />
+            <header style={{ background: th.hd }} className="sticky top-0 z-50">
+              <div className="max-w-4xl mx-auto px-3 py-2.5 flex items-center justify-between">
+                <div>
+                  <h1 className="text-sm font-bold text-white">
+                    Calculo de Demanda - CEMIG 5.1
+                  </h1>
+                  <p className="text-xs" style={{ color: "#9ca3af" }}>
+                    Anexo B - D = a+b+c+d+e+f
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div
+                    className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-lg"
+                    style={{ background: `${th.ac}20` }}
+                  >
+                    <span className="text-xs" style={{ color: "#9ca3af" }}>
+                      D=
+                    </span>
+                    <span
+                      className="font-mono font-bold text-sm"
+                      style={{ color: th.ac }}
+                    >
+                      {fmt(D)} kVA
+                    </span>
+                  </div>
+                  <button
+                    onClick={() => setDk(!dk)}
+                    className="w-7 h-7 rounded-md flex items-center justify-center text-xs"
+                    style={{
+                      background: dk ? "#252836" : "#374151",
+                      color: "#fff",
+                    }}
+                  >
+                    {dk ? "\u2600" : "\u263E"}
+                  </button>
+                </div>
+              </div>
+              <div className="max-w-4xl mx-auto px-3">
+                <div
+                  className="flex gap-0.5 overflow-x-auto -mb-px"
+                  style={{ scrollbarWidth: "none" }}
+                >
+                  {tbs.map((tb) => (
+                    <button
+                      key={tb.k}
+                      onClick={() => setTab(tb.k)}
+                      className="px-2.5 py-1.5 text-xs font-medium whitespace-nowrap rounded-t-md"
+                      style={{
+                        color: tab === tb.k ? th.ac : "#9ca3af",
+                        background: tab === tb.k ? th.bg : "transparent",
+                        borderBottom:
+                          tab === tb.k
+                            ? `2px solid ${th.ac}`
+                            : "2px solid transparent",
+                      }}
+                    >
+                      {tb.l}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </header>
+            <main className="max-w-4xl mx-auto px-3 py-4 pb-20">
+              <div
+                className="rounded-lg p-2.5 mb-4"
+                style={{
+                  background: `${th.ac}10`,
+                  border: `1px solid ${th.ac}25`,
+                }}
+              >
+                <p className="text-xs" style={{ color: th.ac }}>
+                  Ferramenta de apoio tecnico. Resultados devem ser validados
+                  por profissional habilitado.
+                </p>
+              </div>
+              {tab === "cat" && renderCat()}
+              {tab === "cfg" && renderCfg()}
+              {tab === "mot" && renderMot()}
+              {tab === "sol" && renderSol()}
+              {tab === "res" && renderRes()}
+            </main>
+            <div
+              className="sm:hidden fixed bottom-0 left-0 right-0 px-3 py-2 z-50 flex items-center justify-between"
+              style={{ background: th.hd, borderTop: `1px solid ${th.bd}` }}
+            >
+              <span className="text-xs text-white">Demanda total</span>
+              <span className="font-mono font-bold" style={{ color: th.ac }}>
+                {fmt(D)} kVA
+              </span>
+            </div>
+          </div>
+        );
+      }
+
+      ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+    </script>
+  </body>
+</html>
