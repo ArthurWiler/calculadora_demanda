@@ -349,6 +349,108 @@
       const uid = () => Math.random().toString(36).slice(2, 9);
 
       // ============================================================
+      // SUB-COMPONENTES (fora do App para evitar remount a cada render)
+      // ============================================================
+      const Cd = ({ children, title, sub, cl = "", th }) => (
+        <div
+          style={{
+            background: th.cd,
+            border: `1px solid ${th.bd}`,
+            borderRadius: 10,
+          }}
+          className={`p-4 mb-4 ${cl}`}
+        >
+          {title && (
+            <h3 style={{ color: th.tx }} className="text-sm font-bold mb-0.5">
+              {title}
+            </h3>
+          )}
+          {sub && (
+            <p style={{ color: th.mt }} className="text-xs mb-3">
+              {sub}
+            </p>
+          )}
+          {children}
+        </div>
+      );
+
+      const Bt = ({ children, onClick, v = "d", sm, cl = "", th }) => {
+        const st =
+          v === "a"
+            ? { background: th.ac, color: "#fff", border: "none" }
+            : v === "r"
+              ? {
+                  background: "transparent",
+                  color: th.rd,
+                  border: `1px solid ${th.rd}30`,
+                }
+              : {
+                  background: th.inp,
+                  color: th.tx,
+                  border: `1px solid ${th.bd}`,
+                };
+        return (
+          <button
+            onClick={onClick}
+            className={`inline-flex items-center justify-center gap-1.5 font-medium rounded-lg transition-all cursor-pointer select-none ${sm ? "text-xs px-2.5 py-1.5" : "text-sm px-3.5 py-2"} ${cl}`}
+            style={st}
+          >
+            {children}
+          </button>
+        );
+      };
+
+      const Inp = ({
+        value,
+        onChange,
+        type = "text",
+        placeholder,
+        style: s = {},
+        cl = "",
+        th,
+      }) => (
+        <input
+          type={type}
+          value={value}
+          onChange={onChange}
+          placeholder={placeholder}
+          className={`rounded-md text-sm outline-none ${cl}`}
+          style={{
+            background: th.inp,
+            color: th.tx,
+            border: `1px solid ${th.bd}`,
+            padding: "5px 8px",
+            ...s,
+          }}
+        />
+      );
+
+      const Sel = ({ value, onChange, children, cl = "", th }) => (
+        <select
+          value={value}
+          onChange={onChange}
+          className={`rounded-md text-sm outline-none cursor-pointer ${cl}`}
+          style={{
+            background: th.inp,
+            color: th.tx,
+            border: `1px solid ${th.bd}`,
+            padding: "5px 8px",
+          }}
+        >
+          {children}
+        </select>
+      );
+
+      const Bg = ({ children, color, th }) => (
+        <span
+          className="text-xs font-bold px-1.5 py-0.5 rounded-full"
+          style={{ background: `${color || th.ac}20`, color: color || th.ac }}
+        >
+          {children}
+        </span>
+      );
+
+      // ============================================================
       // APP
       // ============================================================
       function App() {
@@ -596,116 +698,19 @@
           { k: "res", l: "Resultado" },
         ];
 
-        const Cd = ({ children, title, sub, cl = "" }) => (
-          <div
-            style={{
-              background: th.cd,
-              border: `1px solid ${th.bd}`,
-              borderRadius: 10,
-            }}
-            className={`p-4 mb-4 ${cl}`}
-          >
-            {title && (
-              <h3 style={{ color: th.tx }} className="text-sm font-bold mb-0.5">
-                {title}
-              </h3>
-            )}
-            {sub && (
-              <p style={{ color: th.mt }} className="text-xs mb-3">
-                {sub}
-              </p>
-            )}
-            {children}
-          </div>
-        );
-
-        const Bt = ({ children, onClick, v = "d", sm, cl = "" }) => {
-          const st =
-            v === "a"
-              ? { background: th.ac, color: "#fff", border: "none" }
-              : v === "r"
-                ? {
-                    background: "transparent",
-                    color: th.rd,
-                    border: `1px solid ${th.rd}30`,
-                  }
-                : {
-                    background: th.inp,
-                    color: th.tx,
-                    border: `1px solid ${th.bd}`,
-                  };
-          return (
-            <button
-              onClick={onClick}
-              className={`inline-flex items-center justify-center gap-1.5 font-medium rounded-lg transition-all cursor-pointer select-none ${sm ? "text-xs px-2.5 py-1.5" : "text-sm px-3.5 py-2"} ${cl}`}
-              style={st}
-            >
-              {children}
-            </button>
-          );
-        };
-
-        const Inp = ({
-          value,
-          onChange,
-          type = "text",
-          placeholder,
-          style: s = {},
-          cl = "",
-        }) => (
-          <input
-            type={type}
-            value={value}
-            onChange={onChange}
-            placeholder={placeholder}
-            className={`rounded-md text-sm outline-none ${cl}`}
-            style={{
-              background: th.inp,
-              color: th.tx,
-              border: `1px solid ${th.bd}`,
-              padding: "5px 8px",
-              ...s,
-            }}
-          />
-        );
-
-        const Sel = ({ value, onChange, children, cl = "" }) => (
-          <select
-            value={value}
-            onChange={onChange}
-            className={`rounded-md text-sm outline-none cursor-pointer ${cl}`}
-            style={{
-              background: th.inp,
-              color: th.tx,
-              border: `1px solid ${th.bd}`,
-              padding: "5px 8px",
-            }}
-          >
-            {children}
-          </select>
-        );
-
-        const Bg = ({ children, color = th.ac }) => (
-          <span
-            className="text-xs font-bold px-1.5 py-0.5 rounded-full"
-            style={{ background: `${color}20`, color }}
-          >
-            {children}
-          </span>
-        );
-
         // ==== RENDER TABS ====
         const renderCat = () => (
           <div>
             <Cd
+              th={th}
               title="Relacao de Cargas Instaladas"
               sub="Preencha a quantidade. A potencia segue o catalogo CEMIG."
             >
               <div className="flex gap-2 mb-3 flex-wrap">
-                <Bt v="a" onClick={loadEx} sm>
+                <Bt th={th} v="a" onClick={loadEx} sm>
                   Carregar exemplo
                 </Bt>
-                <Bt v="r" onClick={clear} sm>
+                <Bt th={th} v="r" onClick={clear} sm>
                   Limpar tudo
                 </Bt>
               </div>
@@ -717,7 +722,7 @@
               if (!items.length) return null;
               const any = items.some((x) => (qtds[x.ci] || 0) > 0);
               return (
-                <Cd key={sg} title={GL[sg]}>
+                <Cd th={th} key={sg} title={GL[sg]}>
                   <div className="overflow-x-auto">
                     <table
                       className="w-full text-xs"
@@ -880,6 +885,7 @@
         const renderCfg = () => (
           <div>
             <Cd
+              th={th}
               title="Grupo A - Iluminacao e Tomadas"
               sub="Tipo de unidade consumidora define o fator de demanda."
             >
@@ -909,7 +915,11 @@
               </div>
               {tipoA === "nr" && (
                 <div className="mb-3">
-                  <Sel value={catA} onChange={(e) => setCatA(+e.target.value)}>
+                  <Sel
+                    th={th}
+                    value={catA}
+                    onChange={(e) => setCatA(+e.target.value)}
+                  >
                     {TABELA_11.map((c, i) => (
                       <option key={i} value={i}>
                         {c.d}
@@ -941,6 +951,7 @@
               </div>
             </Cd>
             <Cd
+              th={th}
               title="Rede de Media Tensao"
               sub="Define quais disjuntores sao aplicaveis na selecao automatica."
             >
@@ -975,7 +986,7 @@
                 </p>
               )}
             </Cd>
-            <Cd title="Resumo Fatores de Demanda">
+            <Cd th={th} title="Resumo Fatores de Demanda">
               {["b1", "b2", "b3", "b4", "b5"].map((sg) => {
                 const r = rB[sg];
                 if (r.kw <= 0) return null;
@@ -1038,6 +1049,7 @@
 
         const renderMot = () => (
           <Cd
+            th={th}
             title='Demanda "d" - Motores Eletricos'
             sub="Tabelas 14/15. Coluna depende do total geral."
           >
@@ -1066,6 +1078,7 @@
                       style={{ borderBottom: `1px solid ${th.bd}20` }}
                     >
                       <Sel
+                        th={th}
                         value={m.tp}
                         onChange={(e) =>
                           setMots((p) =>
@@ -1084,6 +1097,7 @@
                       style={{ borderBottom: `1px solid ${th.bd}20` }}
                     >
                       <Sel
+                        th={th}
                         value={m.cv}
                         onChange={(e) =>
                           setMots((p) =>
@@ -1108,6 +1122,7 @@
                       style={{ borderBottom: `1px solid ${th.bd}20` }}
                     >
                       <Inp
+                        th={th}
                         type="number"
                         value={m.q || ""}
                         onChange={(e) =>
@@ -1140,6 +1155,7 @@
               </tbody>
             </table>
             <Bt
+              th={th}
               sm
               onClick={() =>
                 setMots((p) => [...p, { id: uid(), tp: "m", cv: 1, q: 1 }])
@@ -1181,6 +1197,7 @@
 
         const renderSol = () => (
           <Cd
+            th={th}
             title='Demanda "e" - Soldas/Transformadores'
             sub="100% maior, 70% 2o, 40% 3o, 30% demais. V-v dobra."
           >
@@ -1209,6 +1226,7 @@
                       style={{ borderBottom: `1px solid ${th.bd}20` }}
                     >
                       <Inp
+                        th={th}
                         value={s.desc}
                         onChange={(e) =>
                           setSols((p) =>
@@ -1226,6 +1244,7 @@
                       style={{ borderBottom: `1px solid ${th.bd}20` }}
                     >
                       <Inp
+                        th={th}
                         type="number"
                         value={s.w || ""}
                         onChange={(e) =>
@@ -1245,6 +1264,7 @@
                       style={{ borderBottom: `1px solid ${th.bd}20` }}
                     >
                       <Inp
+                        th={th}
                         type="number"
                         value={s.q || ""}
                         onChange={(e) =>
@@ -1293,6 +1313,7 @@
               </tbody>
             </table>
             <Bt
+              th={th}
               sm
               onClick={() =>
                 setSols((p) => [
@@ -1337,7 +1358,7 @@
           ];
           return (
             <div>
-              <Cd>
+              <Cd th={th}>
                 <div className="text-center mb-5">
                   <p
                     className="text-xs uppercase tracking-widest mb-1"
@@ -1377,7 +1398,7 @@
                       }}
                     >
                       <div className="flex items-center gap-2">
-                        <Bg>{g.k}</Bg>
+                        <Bg th={th}>{g.k}</Bg>
                         <span className="text-xs" style={{ color: th.tx }}>
                           {g.l}
                         </span>
@@ -1403,14 +1424,17 @@
                   </div>
                 </div>
                 <div className="flex gap-2 justify-center mt-4 flex-wrap">
-                  <Bt v="a" onClick={copyR}>
+                  <Bt th={th} v="a" onClick={copyR}>
                     {cp ? "Copiado!" : "Copiar resultado"}
                   </Bt>
-                  <Bt onClick={clear}>Limpar tudo</Bt>
+                  <Bt th={th} onClick={clear}>
+                    Limpar tudo
+                  </Bt>
                 </div>
               </Cd>
               {D > 0 && (
                 <Cd
+                  th={th}
                   title="Disjuntor Recomendado"
                   sub={`Rede de MT: ${redeMT === "mono" ? "Monofasica (120/240V)" : "Trifasica (127/220V)"} | Demanda: ${fmt(D)} kVA`}
                 >
@@ -1472,7 +1496,7 @@
                   )}
                 </Cd>
               )}
-              <Cd title="Observacoes normativas">
+              <Cd th={th} title="Observacoes normativas">
                 <div className="text-xs space-y-1" style={{ color: th.mt }}>
                   <p>
                     Grupo "a" residencial: Tabela 10. Nao residencial: Tabela
