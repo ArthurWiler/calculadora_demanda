@@ -7,6 +7,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <link
       href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css"
       rel="stylesheet"
@@ -664,29 +665,481 @@
           });
         }, [rA, rB, rC, rD, rE, rF, D, disjOpcoes, redeMT]);
 
+        const gerarPDF = useCallback(() => {
+          if (!window.jspdf) {
+            alert(
+              "Biblioteca jsPDF nao carregada. Verifique sua conexao com a internet.",
+            );
+            return;
+          }
+          const { jsPDF } = window.jspdf;
+          const doc = new jsPDF({ unit: "mm", format: "a4" });
+
+          const PW = 210,
+            PH = 297,
+            MG = 14;
+          const CW = PW - 2 * MG; // 182mm
+          let cy = MG;
+
+          const n2 = (v) =>
+            v == null || isNaN(v)
+              ? "0,00"
+              : Number(v).toLocaleString("pt-BR", {
+                  minimumFractionDigits: 2,
+                  maximumFractionDigits: 2,
+                });
+          const nW = (v) => (Number(v) || 0).toLocaleString("pt-BR");
+
+          const checkSpace = (h) => {
+            if (cy + h > PH - 14) {
+              doc.addPage();
+              cy = MG;
+            }
+          };
+
+          // --- HEADER ---
+          doc.setFillColor(4, 30, 24);
+          doc.rect(0, 0, PW, 20, "F");
+          doc.setFillColor(1, 111, 34);
+          doc.rect(0, 0, 4, 20, "F");
+          doc.setFont("helvetica", "bold");
+          doc.setFontSize(12);
+          doc.setTextColor(255, 255, 255);
+          doc.text("Calculo de Demanda - CEMIG 5.1", MG, 9);
+          doc.setFont("helvetica", "normal");
+          doc.setFontSize(7.5);
+          doc.setTextColor(64, 146, 129);
+          doc.text(
+            "Norma CEMIG 5.1 / Anexo B  -  D = a + b + c + d + e + f",
+            MG,
+            15,
+          );
+          const agora = new Date();
+          const dtStr =
+            agora.toLocaleDateString("pt-BR") +
+            " " +
+            agora.toLocaleTimeString("pt-BR", {
+              hour: "2-digit",
+              minute: "2-digit",
+            });
+          doc.text("Emitido: " + dtStr, PW - MG, 15, { align: "right" });
+          cy = 26;
+
+          // --- Helpers ---
+          const secTitle = (txt) => {
+            checkSpace(10);
+            doc.setFillColor(231, 241, 239);
+            doc.rect(MG, cy, CW, 6.5, "F");
+            doc.setFillColor(1, 111, 34);
+            doc.rect(MG, cy, 2.5, 6.5, "F");
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(8);
+            doc.setTextColor(4, 30, 24);
+            doc.text(txt, MG + 5, cy + 4.5);
+            cy += 8.5;
+          };
+
+          const tblHead = (cols) => {
+            checkSpace(6);
+            doc.setFillColor(215, 218, 226);
+            doc.rect(MG, cy, CW, 5.5, "F");
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(7.5);
+            doc.setTextColor(90, 96, 115);
+            cols.forEach((c) => {
+              const ax =
+                c.align === "right"
+                  ? MG + c.x + c.w - 1.5
+                  : c.align === "center"
+                    ? MG + c.x + c.w / 2
+                    : MG + c.x + 1.5;
+              doc.text(c.label, ax, cy + 4, { align: c.align || "left" });
+            });
+            cy += 5.5;
+          };
+
+          let rIdx = 0;
+          const resetR = () => {
+            rIdx = 0;
+          };
+
+          const tblRow = (cells, h) => {
+            h = h || 5.5;
+            checkSpace(h);
+            if (rIdx % 2 === 0) {
+              doc.setFillColor(255, 255, 255);
+            } else {
+              doc.setFillColor(247, 248, 251);
+            }
+            doc.rect(MG, cy, CW, h, "F");
+            doc.setFont("helvetica", "normal");
+            doc.setFontSize(7.5);
+            doc.setTextColor(30, 32, 42);
+            cells.forEach((c) => {
+              const ax =
+                c.align === "right"
+                  ? MG + c.x + c.w - 1.5
+                  : c.align === "center"
+                    ? MG + c.x + c.w / 2
+                    : MG + c.x + 1.5;
+              const lines = doc.splitTextToSize(
+                String(c.label || ""),
+                c.w - 2.5,
+              );
+              doc.text(lines[0], ax, cy + 3.8, { align: c.align || "left" });
+            });
+            rIdx++;
+            cy += h;
+          };
+
+          const subRow = (label, val) => {
+            checkSpace(6);
+            doc.setFillColor(231, 241, 239);
+            doc.rect(MG, cy, CW, 5.5, "F");
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(7.5);
+            doc.setTextColor(1, 111, 34);
+            doc.text(label, MG + 5, cy + 3.9);
+            doc.text(val, MG + CW - 1.5, cy + 3.9, { align: "right" });
+            cy += 5.5;
+          };
+
+          const totRow = (label, val) => {
+            checkSpace(7.5);
+            doc.setFillColor(1, 111, 34);
+            doc.rect(MG, cy, CW, 7.5, "F");
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(9.5);
+            doc.setTextColor(196, 255, 63);
+            doc.text(label, MG + 5, cy + 5.3);
+            doc.text(val, MG + CW - 1.5, cy + 5.3, { align: "right" });
+            cy += 7.5;
+          };
+
+          const sp = (h) => {
+            cy += h || 3;
+          };
+
+          // =============================================
+          // 1. CARGAS INSTALADAS
+          // =============================================
+          const colsCarga = [
+            { x: 0, w: 90, label: "Equipamento", align: "left" },
+            { x: 90, w: 30, label: "Pot. (W)", align: "right" },
+            { x: 120, w: 22, label: "Qtd", align: "center" },
+            { x: 142, w: 40, label: "Total (W)", align: "right" },
+          ];
+
+          let hasCarga = false;
+          GO.forEach(function (sg) {
+            const items = CAT.map(function (c, i) {
+              return Object.assign({}, c, { qi: qtds[i] || 0 });
+            }).filter(function (x) {
+              return x.g === sg && x.qi > 0;
+            });
+            if (!items.length) return;
+
+            if (!hasCarga) {
+              secTitle("1.  RELACAO DE CARGAS INSTALADAS");
+              hasCarga = true;
+            }
+
+            sp(2);
+            checkSpace(5);
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(7);
+            doc.setTextColor(100, 107, 130);
+            doc.text(GL[sg].toUpperCase(), MG, cy + 3.5);
+            cy += 5;
+
+            resetR();
+            tblHead(colsCarga);
+            items.forEach(function (it) {
+              tblRow([
+                { x: 0, w: 90, label: it.n, align: "left" },
+                { x: 90, w: 30, label: nW(it.w), align: "right" },
+                { x: 120, w: 22, label: String(it.qi), align: "center" },
+                { x: 142, w: 40, label: nW(it.w * it.qi), align: "right" },
+              ]);
+            });
+            const subtW = items.reduce(function (s, x) {
+              return s + x.qi * x.w;
+            }, 0);
+            subRow("Subtotal  " + GL[sg], nW(subtW) + " W");
+            sp(2);
+          });
+
+          if (!hasCarga) {
+            sp(2);
+            doc.setFont("helvetica", "italic");
+            doc.setFontSize(7.5);
+            doc.setTextColor(150, 155, 170);
+            doc.text("Nenhuma carga catalogada informada.", MG, cy + 4);
+            cy += 8;
+          } else {
+            const totalWCat = CAT.reduce(function (s, c, i) {
+              return s + (qtds[i] || 0) * c.w;
+            }, 0);
+            subRow(
+              "TOTAL DE CARGAS CATALOGADAS",
+              nW(totalWCat) + " W  =  " + n2(totalWCat / 1000) + " kW",
+            );
+          }
+
+          // =============================================
+          // 2. MOTORES
+          // =============================================
+          const motsOk = mots.filter(function (m) {
+            return m.q > 0 && m.cv > 0;
+          });
+          if (motsOk.length > 0) {
+            sp(5);
+            secTitle('2.  MOTORES ELETRICOS  (Demanda "d" - Tabelas 14/15)');
+            sp(1);
+            resetR();
+            tblHead([
+              { x: 0, w: 45, label: "Tipo", align: "left" },
+              { x: 45, w: 50, label: "Potencia (CV)", align: "center" },
+              { x: 95, w: 25, label: "Qtd", align: "center" },
+              { x: 120, w: 62, label: "Demanda (kVA)", align: "right" },
+            ]);
+            rD.det.forEach(function (d) {
+              tblRow([
+                {
+                  x: 0,
+                  w: 45,
+                  label: d.tp === "m" ? "Monofasico" : "Trifasico",
+                  align: "left",
+                },
+                { x: 45, w: 50, label: String(d.cv) + " CV", align: "center" },
+                { x: 95, w: 25, label: String(d.q), align: "center" },
+                { x: 120, w: 62, label: n2(d.dkva) + " kVA", align: "right" },
+              ]);
+            });
+            subRow("Total motores eletricos", n2(rD.d) + " kVA");
+          }
+
+          // =============================================
+          // 3. SOLDAS / TRANSFORMADORES
+          // =============================================
+          const solsOk = sols.filter(function (s) {
+            return (s.q || 0) > 0;
+          });
+          if (solsOk.length > 0) {
+            sp(5);
+            secTitle('3.  SOLDAS / TRANSFORMADORES  (Demanda "e")');
+            sp(1);
+            resetR();
+            tblHead([
+              { x: 0, w: 80, label: "Descricao", align: "left" },
+              { x: 80, w: 28, label: "Pot. (W)", align: "right" },
+              { x: 108, w: 20, label: "Qtd", align: "center" },
+              { x: 128, w: 18, label: "V-v", align: "center" },
+              { x: 146, w: 36, label: "Demanda (kVA)", align: "right" },
+            ]);
+            solsOk.forEach(function (s) {
+              tblRow([
+                {
+                  x: 0,
+                  w: 80,
+                  label: s.desc || "(sem descricao)",
+                  align: "left",
+                },
+                { x: 80, w: 28, label: nW(s.w || 0), align: "right" },
+                { x: 108, w: 20, label: String(s.q), align: "center" },
+                { x: 128, w: 18, label: s.vv ? "Sim" : "Nao", align: "center" },
+                { x: 146, w: 36, label: "(v. resumo)", align: "right" },
+              ]);
+            });
+            subRow("Total soldas/transformadores", n2(rE.d) + " kVA");
+          }
+
+          // =============================================
+          // RESUMO DE DEMANDA
+          // =============================================
+          sp(5);
+          secTitle("RESUMO DE DEMANDA  (D = a + b + c + d + e + f)");
+          sp(1);
+          resetR();
+          tblHead([
+            { x: 0, w: 14, label: "Grupo", align: "center" },
+            { x: 14, w: 132, label: "Descricao", align: "left" },
+            { x: 146, w: 36, label: "Demanda (kVA)", align: "right" },
+          ]);
+          [
+            { k: "a", l: "Iluminacao e tomadas", v: rA.d },
+            { k: "b", l: "Aparelhos e aquecimento (b1 a b5)", v: rB.total },
+            { k: "c", l: "Condicionadores de ar", v: rC.d },
+            { k: "d", l: "Motores eletricos", v: rD.d },
+            { k: "e", l: "Soldas / transformadores", v: rE.d },
+            { k: "f", l: "Raios-X", v: rF.d },
+          ].forEach(function (g) {
+            tblRow([
+              { x: 0, w: 14, label: g.k, align: "center" },
+              { x: 14, w: 132, label: g.l, align: "left" },
+              { x: 146, w: 36, label: n2(g.v) + " kVA", align: "right" },
+            ]);
+          });
+          sp(1);
+          totRow("DEMANDA TOTAL  D = a + b + c + d + e + f", n2(D) + " kVA");
+
+          // =============================================
+          // DISJUNTOR RECOMENDADO
+          // =============================================
+          if (D > 0 && disjOpcoes.length > 0) {
+            sp(5);
+            secTitle("DISJUNTOR RECOMENDADO");
+            sp(2);
+            checkSpace(8);
+            doc.setFont("helvetica", "normal");
+            doc.setFontSize(7.5);
+            doc.setTextColor(100, 107, 130);
+            doc.text(
+              "Rede de MT: " +
+                (redeMT === "mono"
+                  ? "Monofasica (120/240V)"
+                  : "Trifasica (127/220V)") +
+                "   Demanda calculada: " +
+                n2(D) +
+                " kVA",
+              MG,
+              cy + 4,
+            );
+            cy += 7;
+
+            disjOpcoes.forEach(function (dj, i) {
+              checkSpace(8);
+              const ideal = i === 0;
+              if (ideal) {
+                doc.setFillColor(231, 241, 239);
+                doc.rect(MG, cy, CW, 7, "F");
+                doc.setDrawColor(1, 111, 34);
+                doc.setLineWidth(0.5);
+                doc.line(MG, cy, MG, cy + 7);
+                doc.setLineWidth(0.15);
+              }
+              doc.setFont("helvetica", ideal ? "bold" : "normal");
+              doc.setFontSize(8.5);
+              doc.setTextColor(
+                ideal ? 15 : 30,
+                ideal ? 108 : 32,
+                ideal ? 88 : 42,
+              );
+              doc.text(
+                (ideal ? "IDEAL:  " : "Alternativa:  ") + dj.fx,
+                MG + (ideal ? 4.5 : 3),
+                cy + 4.8,
+              );
+              doc.setFont("helvetica", "normal");
+              doc.setFontSize(7.5);
+              doc.setTextColor(107, 113, 133);
+              doc.text("ate " + n2(dj.d) + " kVA", MG + CW - 1.5, cy + 4.8, {
+                align: "right",
+              });
+              cy += 8.5;
+            });
+          }
+
+          // =============================================
+          // POTENCIA ATIVA TOTAL INSTALADA
+          // =============================================
+          sp(5);
+          secTitle("POTENCIA ATIVA TOTAL INSTALADA");
+          sp(3);
+
+          const paW =
+            CAT.reduce(function (s, c, i) {
+              return s + (qtds[i] || 0) * c.w;
+            }, 0) +
+            mots
+              .filter(function (m) {
+                return m.q > 0 && m.cv > 0;
+              })
+              .reduce(function (s, m) {
+                return s + m.q * m.cv * 736;
+              }, 0) +
+            sols
+              .filter(function (s) {
+                return (s.q || 0) > 0;
+              })
+              .reduce(function (s, sl) {
+                return s + (sl.q || 0) * (sl.w || 0);
+              }, 0);
+          const paKW = paW / 1000;
+
+          checkSpace(18);
+          doc.setFont("helvetica", "normal");
+          doc.setFontSize(7.5);
+          doc.setTextColor(107, 113, 133);
+          doc.text(
+            "Soma das potencias nominais de todos os equipamentos instalados, sem aplicacao de fatores de demanda.",
+            MG,
+            cy,
+          );
+          doc.text(
+            "Para motores eletricos, utilizado: 1 CV = 736 W.",
+            MG,
+            cy + 4.5,
+          );
+          cy += 10;
+          checkSpace(12);
+          doc.setFont("helvetica", "bold");
+          doc.setFontSize(20);
+          doc.setTextColor(1, 111, 34);
+          doc.text(n2(paKW) + " kW", MG, cy + 8);
+          cy += 14;
+
+          // =============================================
+          // RODAPE EM TODAS AS PAGINAS
+          // =============================================
+          const totalPgs = doc.internal.getNumberOfPages();
+          for (let p = 1; p <= totalPgs; p++) {
+            doc.setPage(p);
+            doc.setDrawColor(210, 213, 220);
+            doc.setLineWidth(0.15);
+            doc.line(MG, PH - 10, PW - MG, PH - 10);
+            doc.setFont("helvetica", "italic");
+            doc.setFontSize(6.5);
+            doc.setTextColor(150, 155, 170);
+            doc.text(
+              "Ferramenta de apoio tecnico. Resultados devem ser validados por profissional habilitado. CEMIG 5.1 / Anexo B.",
+              MG,
+              PH - 5.5,
+            );
+            doc.setFont("helvetica", "normal");
+            doc.setFontSize(6.5);
+            doc.setTextColor(150, 155, 170);
+            doc.text("Pag. " + p + " / " + totalPgs, PW - MG, PH - 5.5, {
+              align: "right",
+            });
+          }
+
+          doc.save("demanda-cemig-5.1.pdf");
+        }, [qtds, mots, sols, rA, rB, rC, rD, rE, rF, D, disjOpcoes, redeMT]);
+
         const th = dk
           ? {
-              bg: "#0c0d12",
-              cd: "#161821",
-              bd: "#252836",
-              tx: "#e4e6ed",
-              mt: "#7c8091",
-              ac: "#f59e0b",
-              abg: "#f59e0b15",
-              inp: "#111318",
-              hd: "#12131a",
-              rd: "#ef4444",
+              bg: "#041e18",
+              cd: "#0b5445",
+              bd: "#094135",
+              tx: "#ffffff",
+              mt: "#409281",
+              ac: "#c4ff3f",
+              abg: "#c4ff3f12",
+              inp: "#094135",
+              hd: "#021410",
+              rd: "#ff6b6b",
             }
           : {
-              bg: "#f0f1f5",
-              cd: "#fff",
-              bd: "#dfe1e8",
-              tx: "#1b1d26",
-              mt: "#6b7185",
-              ac: "#d97706",
-              abg: "#fef3c715",
-              inp: "#f7f8fa",
-              hd: "#1b1d26",
+              bg: "#f4f5f4",
+              cd: "#ffffff",
+              bd: "#b1b9b7",
+              tx: "#041e18",
+              mt: "#364b46",
+              ac: "#016f22",
+              abg: "#e7f1ef",
+              inp: "#f4f5f4",
+              hd: "#041e18",
               rd: "#dc2626",
             };
 
@@ -1427,6 +1880,9 @@
                   <Bt th={th} v="a" onClick={copyR}>
                     {cp ? "Copiado!" : "Copiar resultado"}
                   </Bt>
+                  <Bt th={th} onClick={gerarPDF}>
+                    Gerar PDF
+                  </Bt>
                   <Bt th={th} onClick={clear}>
                     Limpar tudo
                   </Bt>
@@ -1538,25 +1994,55 @@
             />
             <header style={{ background: th.hd }} className="sticky top-0 z-50">
               <div className="max-w-4xl mx-auto px-3 py-2.5 flex items-center justify-between">
-                <div>
-                  <h1 className="text-sm font-bold text-white">
-                    Calculo de Demanda - CEMIG 5.1
-                  </h1>
-                  <p className="text-xs" style={{ color: "#9ca3af" }}>
-                    Anexo B - D = a+b+c+d+e+f
-                  </p>
+                <div className="flex items-center gap-2.5">
+                  <div
+                    style={{
+                      width: 28,
+                      height: 28,
+                      borderRadius: 6,
+                      background: "#016f22",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      flexShrink: 0,
+                    }}
+                  >
+                    <span
+                      style={{
+                        color: "#c4ff3f",
+                        fontSize: 14,
+                        fontWeight: 900,
+                      }}
+                    >
+                      ⚡
+                    </span>
+                  </div>
+                  <div>
+                    <h1 className="text-sm font-bold text-white">
+                      Calculo de Demanda — CEMIG 5.1
+                    </h1>
+                    <p className="text-xs" style={{ color: "#409281" }}>
+                      Norma CEMIG 5.1 / Anexo B · D = a+b+c+d+e+f
+                    </p>
+                  </div>
                 </div>
                 <div className="flex items-center gap-2">
                   <div
                     className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-lg"
-                    style={{ background: `${th.ac}20` }}
+                    style={{
+                      background: dk ? "#c4ff3f18" : "#016f2215",
+                      border: `1px solid ${dk ? "#c4ff3f30" : "#016f2235"}`,
+                    }}
                   >
-                    <span className="text-xs" style={{ color: "#9ca3af" }}>
+                    <span
+                      className="text-xs"
+                      style={{ color: dk ? "#409281" : "#409281" }}
+                    >
                       D=
                     </span>
                     <span
                       className="font-mono font-bold text-sm"
-                      style={{ color: th.ac }}
+                      style={{ color: dk ? "#c4ff3f" : "#016f22" }}
                     >
                       {fmt(D)} kVA
                     </span>
@@ -1565,8 +2051,9 @@
                     onClick={() => setDk(!dk)}
                     className="w-7 h-7 rounded-md flex items-center justify-center text-xs"
                     style={{
-                      background: dk ? "#252836" : "#374151",
-                      color: "#fff",
+                      background: dk ? "#0b5445" : "#016f22",
+                      color: dk ? "#c4ff3f" : "#fff",
+                      border: `1px solid ${dk ? "#094135" : "transparent"}`,
                     }}
                   >
                     {dk ? "\u2600" : "\u263E"}
